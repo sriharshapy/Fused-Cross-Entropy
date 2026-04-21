@@ -38,9 +38,15 @@ def make_tensors(
     Uses a fixed generator seeded deterministically so that a given (N, V, seed)
     triple always produces the same tensors across machines.
     """
+    # Memory-efficient path: generate the logits *directly* in the target dtype
+    # and scale in-place. The previous version created a full fp32 copy plus an
+    # intermediate ``logits * scale`` tensor, which pushed peak memory to ~4x
+    # the final fp16 size -- enough to OOM a 16 GB T4 at (N=16384, V=128256).
     g = torch.Generator(device=device).manual_seed(seed)
-    logits = torch.randn(N, V, generator=g, device=device, dtype=torch.float32)
-    logits = (logits * logit_scale).to(logits_dtype).contiguous()
+    logits = torch.randn(N, V, generator=g, device=device, dtype=logits_dtype)
+    logits.mul_(logit_scale)
+    if not logits.is_contiguous():
+        logits = logits.contiguous()
     targets = torch.randint(
         low=0, high=V, size=(N,),
         generator=g, device=device, dtype=torch.int64,
