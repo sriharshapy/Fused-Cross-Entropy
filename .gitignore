@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# PyTorch / Triton JIT build cache
+.torch_extensions/
+.triton/
+
+# Profiling raw outputs (keep merged CSVs tracked)
+data/*/raw/
+*.nsys-rep
+*.sqlite
+*.ncu-rep
+
+# Saved tensors (can be large, regenerated from seed)
+*.pt
+!tests/*.pt
+
+# Local scratch
+scratch/
+tmp/
