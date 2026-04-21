@@ -14,12 +14,40 @@ requirement is satisfied by running the notebook separately on each arch.
 """
 from __future__ import annotations
 
+import importlib
 import os
 import pathlib
+import subprocess
+import sys
 from typing import Optional
 
 import torch
 from torch.utils.cpp_extension import load_inline
+
+
+def _ensure_ninja() -> None:
+    """``load_inline`` shells out to ninja; install it via pip if missing.
+
+    Colab images don't always ship ninja, and the surfaced error
+    (``RuntimeError: Ninja is required to load C++ extensions``) is cryptic
+    mid-benchmark. Installing here keeps the notebook single-command: users
+    hit Run-All and don't have to babysit a separate ``pip install`` cell.
+    """
+    try:
+        from torch.utils.cpp_extension import is_ninja_available
+    except ImportError:
+        return
+    if is_ninja_available():
+        return
+    print("[cuda_launcher] ninja not found; pip install ninja ...", flush=True)
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "ninja"])
+    # Refresh the import caches so PyTorch's re-check sees the just-installed binary.
+    importlib.invalidate_caches()
+    if not is_ninja_available():
+        raise RuntimeError(
+            "ninja install completed but torch still can't find it. "
+            "Restart the kernel and re-run the cell."
+        )
 
 
 _KERNELS_DIR = pathlib.Path(__file__).resolve().parent
@@ -53,6 +81,8 @@ def get_module(verbose: bool = False):
     global _MODULE_CACHE
     if _MODULE_CACHE is not None:
         return _MODULE_CACHE
+
+    _ensure_ninja()
 
     cuda_src_naive = (_KERNELS_DIR / "fused_xent_cuda_naive.cu").read_text()
     cuda_src_online = (_KERNELS_DIR / "fused_xent_cuda_online.cu").read_text()
