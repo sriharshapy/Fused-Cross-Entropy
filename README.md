@@ -102,6 +102,16 @@ Open `http://localhost:8888` and **Run All** on `bench/benchmark.ipynb`. The who
 - **Shape grid**: `N in {256, 1024, 4096, 16384}` (T4) or `N in {... , 65536, 262144}` (B200), `V in {32000, 128256}` (GPT-NeoX and Llama-3 vocab sizes).
 - **Timing**: 10 warmup + 100 timed iterations using `torch.cuda.Event`. Report p50, p95, p99, mean, std.
 - **Correctness**: `torch.allclose(loss_custom, loss_pytorch, atol=1e-3, rtol=1e-3)`. Tolerance is loose because fp16 logits with fp32 accumulation produce small but real algorithm-dependent differences.
+- **fp16 vs fp32 output precision (sanity-check note)**: `F.cross_entropy` on fp16 logits returns an **fp16** loss tensor — every value is snapped to the nearest fp16 ULP (`~0.008` at magnitudes around 10). Our three custom kernels (Triton, CUDA naive, CUDA online) accumulate `max` and `sum-exp` in **fp32 internally** and return fp32 directly, so their outputs sit *between* fp16 grid points and agree with each other bit-for-bit. Example smoke-test output (first 5 rows):
+
+    ```
+    pytorch      loss[:5] = [9.9921875,          9.9296875,          8.5234375,          8.3125,             12.1640625]
+    triton       loss[:5] = [9.993267059326172,  9.925986289978027,  8.52587890625,      8.316113471984863,  12.167186737060547]
+    cuda_naive   loss[:5] = [9.993267059326172,  9.925986289978027,  8.52587890625,      8.316113471984863,  12.167186737060547]
+    cuda_online  loss[:5] = [9.993267059326172,  9.925986289978027,  8.52587890625,      8.316113471984863,  12.167186737060547]
+    ```
+
+    Every PyTorch value is an exact multiple of `1/128` (the fp16 step near magnitude 10); the custom kernels sit at fp32-precision sub-steps between them. The three custom kernels agreeing bit-for-bit is the real correctness signal — that's what parity tests check — and the `rtol=1e-3` tolerance comfortably absorbs the fp16-vs-fp32 gap. Treat this as a small quality-of-result win for the fused kernels, not a bug.
 - **Nsight Compute sections**: `SchedulerStats`, `WarpStateStats`, `SourceCounters`, `MemoryWorkloadAnalysis`, `Occupancy`, `ComputeWorkloadAnalysis`. Kernel filter: `regex:"cross_entropy|xent|fused_xent"`.
 - **Nsight Systems reports**: `cuda_gpu_kern_sum`, `cuda_api_sum`.
 

@@ -106,7 +106,11 @@ def main() -> int:
         print("ERROR: CUDA is not available.", file=sys.stderr)
         return 2
 
+    # Newer PyTorch builds reject ``cuda`` without an explicit index, so default
+    # to ``cuda:0`` when the user didn't pick one.
     device = torch.device(args.device)
+    if device.type == "cuda" and device.index is None:
+        device = torch.device("cuda", 0)
     torch.cuda.set_device(device)
 
     fn = _load_impl(args.impl)
